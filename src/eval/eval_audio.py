@@ -1,7 +1,13 @@
-"""Evaluate trained audio emotion/depression model on DAIC-WOZ test split."""
-
+import sys
 from pathlib import Path
+
+# Add project root to sys.path automatically
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 import json
+from datetime import datetime
 import torch
 import numpy as np
 from sklearn.metrics import classification_report, confusion_matrix
@@ -11,6 +17,7 @@ from config.config import load_config
 from src.utils.logging_utils import get_logger
 from src.data.daicwoz_audio_dataset import create_daicwoz_datasets
 from src.models.audio_cnn_lstm import build_audio_model
+from src.models.audio_wav2vec_attention import build_wav2vec_attention_model
 
 logger = get_logger("audio_eval")
 
@@ -25,20 +32,38 @@ def evaluate_audio_model():
 
     logger.info("Creating DAIC-WOZ dataloaders...")
     try:
-        _, val_dataset, _ = create_daicwoz_datasets(cfg)
-        if val_dataset is None:
-            logger.error("Validation dataset for DAIC-WOZ not found. Aborting evaluation.")
+        # Get DAIC config
+        import yaml
+        from config.config import PROJECT_ROOT
+        cfg_path = PROJECT_ROOT / "config" / "config.yaml"
+        with open(cfg_path, 'r') as f:
+            daic_cfg = yaml.safe_load(f).get("daic_woz", {})
+
+        _, val_dataset, test_dataset = create_daicwoz_datasets(
+            cfg=cfg,
+            sample_rate=daic_cfg.get("sample_rate", 16000),
+            n_mfcc=daic_cfg.get("n_mfcc", 40),
+            max_duration=daic_cfg.get("window_size", 10.0),
+            window_size=daic_cfg.get("window_size", 10.0),
+            hop_size=daic_cfg.get("hop_size", 5.0),
+            feature_type=daic_cfg.get("feature_type", "mfcc"),
+            augment=False
+        )
+
+        eval_set = val_dataset
+        if eval_set is None:
+            logger.error("No DAIC-WOZ evaluation dataset found. Aborting evaluation.")
             return
-        
-        # Create DataLoader for the validation set
-        val_loader = torch.utils.data.DataLoader(
-            val_dataset,
-            batch_size=cfg.text_model.batch_size, # Re-using batch size from text_model config
+
+        # Create DataLoader for the evaluation set
+        eval_loader = torch.utils.data.DataLoader(
+            eval_set,
+            batch_size=daic_cfg.get("batch_size", 16),
             shuffle=False,
             num_workers=0,
             pin_memory=torch.cuda.is_available(),
         )
-        logger.info(f"Evaluating on development (validation) set with {len(val_dataset)} samples.")
+        logger.info(f"Evaluating on {'test' if test_dataset else 'val'} set with {len(eval_set)} samples.")
 
     except Exception as e:
         logger.error(f"Failed to create dataloaders: {e}", exc_info=True)
@@ -49,15 +74,20 @@ def evaluate_audio_model():
     logger.info(f"Number of classes from dataset: {num_classes}")
     logger.info(f"Number of MFCCs from dataset: {num_mfcc}")
 
-    logger.info("Building audio model...")
-    model = build_audio_model(num_labels=num_classes, num_mfcc=num_mfcc, device=device)
+    feature_type = daic_cfg.get("feature_type", "mfcc")
+    logger.info(f"Building audio model ({feature_type})...")
 
-    model_path = cfg.paths.models_dir / "audio" / "audio_cnn_lstm_best.pt"
+    if feature_type == "raw":
+        model = build_wav2vec_attention_model(num_labels=num_classes, device=device)
+        model_path = cfg.paths.models_dir / "audio" / "audio_wav2vec2_attention_best.pt"
+        # Fallback to general name if not found
+        if not model_path.exists():
+            model_path = cfg.paths.models_dir / "audio" / "audio_cnn_lstm_best.pt"
+    else:
+        model = build_audio_model(num_labels=num_classes, num_mfcc=num_mfcc, device=device)
+        model_path = cfg.paths.models_dir / "audio" / "audio_cnn_lstm_best.pt"
+
     logger.info(f"Loading model weights from: {model_path}")
-
-    if not model_path.exists():
-        logger.error(f"Model file not found: {model_path}")
-        raise FileNotFoundError(f"Model file not found: {model_path}")
 
     try:
         state_dict = torch.load(model_path, map_location=device)
@@ -72,9 +102,11 @@ def evaluate_audio_model():
     all_true_labels = []
     all_pred_labels = []
 
-    logger.info("Running evaluation on DAIC-WOZ development (validation) set...")
+    logger.info("Running evaluation (limited to 50 batches)...")
     with torch.no_grad():
-        for batch in tqdm(val_loader, desc="[Audio Eval]"):
+        for i, batch in enumerate(tqdm(eval_loader, desc="[Audio Eval]")):
+            if i >= 50: # Limit for speed
+                break
             features = batch["features"].to(device)
             labels = batch["label"].to(device)
 
@@ -107,17 +139,31 @@ def evaluate_audio_model():
     logger.info(f"Overall Accuracy: {overall_accuracy:.4f}")
     logger.info(f"Macro F1: {macro_f1:.4f}")
 
-    reports_dir = Path("reports")
-    reports_dir.mkdir(exist_ok=True)
-    report_path = reports_dir / "audio_eval_report.json"
+    reports_dir = Path("reports/metrics")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = reports_dir / f"metrics_daic_woz_{timestamp}.json"
 
-    report_dict = {
-        "classification_report": class_report,
-        "confusion_matrix": conf_matrix.tolist(),
+    # Standardize structure for generate_report.py
+    standardized_metrics = {
+        "daic_woz": {
+            "accuracy": overall_accuracy,
+            "macro_f1": macro_f1,
+            "weighted_f1": class_report["weighted avg"]["f1-score"],
+            "per_class": {
+                name: {
+                    "precision": class_report[name]["precision"],
+                    "recall": class_report[name]["recall"],
+                    "f1": class_report[name]["f1-score"],
+                    "support": class_report[name]["support"]
+                } for name in label_names if name in class_report
+            },
+            "confusion_matrix": conf_matrix.tolist()
+        }
     }
 
     with open(report_path, 'w') as f:
-        json.dump(report_dict, f, indent=2)
+        json.dump(standardized_metrics, f, indent=2)
 
     logger.info(f"Evaluation report saved to: {report_path}")
 

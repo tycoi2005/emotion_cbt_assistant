@@ -6,6 +6,7 @@ import pandas as pd
 import yaml
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
+import torchaudio
 
 from config.config import ProjectConfig, load_config, PROJECT_ROOT
 from src.utils.logging_utils import get_logger
@@ -65,9 +66,10 @@ class DAICWOZAudioDataset(BaseAudioDataset):
         sample_rate: int = 16000,
         n_mfcc: int = 40,
         max_duration: float = 10.0,
-        window_size: Optional[float] = 10.0, # in seconds
-        hop_size: Optional[float] = 5.0,     # in seconds for overlap
+        window_size: Optional[float] = 10.0,
+        hop_size: Optional[float] = 5.0,
         feature_type: str = "mfcc",
+        augment: bool = False,
     ):
         """
         Initialize DAIC-WOZ audio dataset.
@@ -82,6 +84,7 @@ class DAICWOZAudioDataset(BaseAudioDataset):
             window_size: Size of sliding window segments in seconds
             hop_size: Hop size for sliding window in seconds
             feature_type: Type of features to return ("mfcc" or "raw")
+            augment: Whether to apply data augmentation
         """
         self.logger = get_logger(__name__)
         self.window_size = window_size
@@ -163,7 +166,7 @@ class DAICWOZAudioDataset(BaseAudioDataset):
                             # If it's already a valid label, keep it
                             pass
                 else:
-                    label_val = None
+                    label_val = 0
 
                 records.append(
                     {
@@ -228,6 +231,7 @@ class DAICWOZAudioDataset(BaseAudioDataset):
             max_duration=max_duration if window_size is None else window_size,
             split_name=split_name,
             feature_type=feature_type,
+            augment=augment,
         )
 
 
@@ -236,6 +240,10 @@ def create_daicwoz_datasets(
     sample_rate: int = 16000,
     n_mfcc: int = 40,
     max_duration: float = 10.0,
+    window_size: Optional[float] = 10.0,
+    hop_size: Optional[float] = 5.0,
+    feature_type: str = "mfcc",
+    augment: bool = False,
 ) -> Tuple[Optional[DAICWOZAudioDataset], Optional[DAICWOZAudioDataset], Optional[DAICWOZAudioDataset]]:
     """
     Create DAIC-WOZ train, validation, and test datasets.
@@ -245,10 +253,10 @@ def create_daicwoz_datasets(
         sample_rate: Target sample rate for audio
         n_mfcc: Number of MFCC coefficients
         max_duration: Maximum duration in seconds
-
-    Returns:
-        Tuple of (train_dataset, val_dataset, test_dataset).
-        Missing datasets are returned as None.
+        window_size: Size of sliding window segments in seconds
+        hop_size: Hop size for sliding window in seconds
+        feature_type: Type of features to return ("mfcc" or "raw")
+        augment: Whether to apply data augmentation to train set
     """
     if cfg is None:
         cfg = load_config()
@@ -279,6 +287,10 @@ def create_daicwoz_datasets(
                 sample_rate=sample_rate,
                 n_mfcc=n_mfcc,
                 max_duration=max_duration,
+                window_size=window_size,
+                hop_size=hop_size,
+                feature_type=feature_type,
+                augment=augment,
             )
         except Exception as e:
             logger.error(f"Failed to create train dataset: {e}")
@@ -291,6 +303,10 @@ def create_daicwoz_datasets(
                 sample_rate=sample_rate,
                 n_mfcc=n_mfcc,
                 max_duration=max_duration,
+                window_size=window_size,
+                hop_size=hop_size,
+                feature_type=feature_type,
+                augment=False,
             )
         except Exception as e:
             logger.error(f"Failed to create dev dataset: {e}")
@@ -303,6 +319,10 @@ def create_daicwoz_datasets(
                 sample_rate=sample_rate,
                 n_mfcc=n_mfcc,
                 max_duration=max_duration,
+                window_size=window_size,
+                hop_size=hop_size,
+                feature_type=feature_type,
+                augment=False,
             )
         except Exception as e:
             logger.error(f"Failed to create test dataset: {e}")

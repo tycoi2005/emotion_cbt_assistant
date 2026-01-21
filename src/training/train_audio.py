@@ -22,6 +22,7 @@ from src.utils.logging_utils import get_logger
 
 from src.data.daicwoz_audio_dataset import create_daicwoz_datasets
 from src.models.audio_cnn_lstm import build_audio_model
+from src.models.audio_wav2vec_attention import build_wav2vec_attention_model
 
 
 def compute_class_weights(labels, num_classes):
@@ -59,7 +60,26 @@ def create_audio_dataloaders(cfg):
         Missing loaders are returned as None.
     """
     logger = get_logger("audio_data")
-    train_set, val_set, test_set = create_daicwoz_datasets(cfg)
+
+    # Get DAIC-WOZ specific config
+    raw_cfg = load_config()
+    # The load_config returns a ProjectConfig, we need to access the raw dictionary if needed or use the updated ProjectConfig if I updated it
+    # Actually, I'll just use the values from the raw config for now to be safe
+    import yaml
+    from config.config import PROJECT_ROOT
+    cfg_path = PROJECT_ROOT / "config" / "config.yaml"
+    with open(cfg_path, 'r') as f:
+        daic_cfg = yaml.safe_load(f).get("daic_woz", {})
+
+    train_set, val_set, test_set = create_daicwoz_datasets(
+        cfg=cfg,
+        sample_rate=daic_cfg.get("sample_rate", 16000),
+        n_mfcc=daic_cfg.get("n_mfcc", 40),
+        max_duration=daic_cfg.get("window_size", 10.0),
+        window_size=daic_cfg.get("window_size", 10.0),
+        hop_size=daic_cfg.get("hop_size", 5.0),
+        feature_type=daic_cfg.get("feature_type", "mfcc")
+    )
 
     # Check if all three are None
     if train_set is None and val_set is None and test_set is None:
@@ -236,21 +256,37 @@ def train_audio_model():
 
     # Build model
     logger.info("Building audio model...")
+    # Get DAIC config again for consistency
+    import yaml
+    from config.config import PROJECT_ROOT
+    cfg_path = PROJECT_ROOT / "config" / "config.yaml"
+    with open(cfg_path, 'r') as f:
+        daic_cfg = yaml.safe_load(f).get("daic_woz", {})
+
+    feature_type = daic_cfg.get("feature_type", "mfcc")
+
     try:
-        model = build_audio_model(
-            num_labels=num_classes, num_mfcc=num_mfcc, device=cfg.device.device
-        )
-        logger.info(f"Model built and moved to {cfg.device.device}")
+        if feature_type == "raw":
+            model = build_wav2vec_attention_model(
+                num_labels=num_classes, device=cfg.device.device
+            )
+        else:
+            model = build_audio_model(
+                num_labels=num_classes, num_mfcc=num_mfcc, device=cfg.device.device
+            )
+        logger.info(f"Model built ({feature_type}) and moved to {cfg.device.device}")
     except Exception as e:
         logger.error(f"Failed to build model: {e}")
         raise
 
     # Create optimizer
-    optimizer = AdamW(model.parameters(), lr=cfg.text_model.learning_rate)
-    logger.info(f"Optimizer: AdamW with lr={cfg.text_model.learning_rate}")
+    learning_rate = float(daic_cfg.get("learning_rate", 1e-4))
+    optimizer = AdamW(model.parameters(), lr=learning_rate)
+    logger.info(f"Optimizer: AdamW with lr={learning_rate}")
 
     # Compute total steps
-    total_steps = len(train_loader) * cfg.text_model.num_epochs
+    num_epochs = int(daic_cfg.get("num_epochs", 30))
+    total_steps = len(train_loader) * num_epochs
     warmup_steps = int(0.1 * total_steps)
 
     # Create LambdaLR scheduler
@@ -265,14 +301,15 @@ def train_audio_model():
 
     # Training setup
     best_val_loss = float("inf")
-    best_model_path = cfg.paths.models_dir / "audio" / "audio_cnn_lstm_best.pt"
+    model_name = "audio_wav2vec2_attention_best.pt" if feature_type == "raw" else "audio_cnn_lstm_best.pt"
+    best_model_path = cfg.paths.models_dir / "audio" / model_name
     best_model_path.parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Starting training for {cfg.text_model.num_epochs} epochs...")
+    logger.info(f"Starting training for {num_epochs} epochs...")
     logger.info(f"Best model will be saved to: {best_model_path}")
 
     # Training loop
-    for epoch in range(cfg.text_model.num_epochs):
+    for epoch in range(num_epochs):
         logger.info(f"\n{'='*50}")
         logger.info(f"Epoch {epoch + 1}/{cfg.text_model.num_epochs}")
         logger.info(f"{'='*50}")

@@ -1,8 +1,15 @@
+import os
+import sys
+from pathlib import Path
+
+# Add project root to sys.path
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 import json
 import base64
 import io
-from pathlib import Path
 from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -46,8 +53,7 @@ def generate_report():
     ]
 
     for config_name, data in metrics.items():
-        if config_name in ["daic_woz", "meld"]:
-            continue  # Skip for now if structure is different
+        # Include all configurations that follow the standard structure
 
         html_content.append(f"<h2>Configuration: {config_name}</h2>")
 

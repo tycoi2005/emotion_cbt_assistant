@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Model Evaluation Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+        
+        .metric-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.2);
+        }
+        
+        .metric-label {
+            font-size: 0.9em;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+        
+        .metric-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .metric-subtitle {
+            font-size: 0.85em;
+            color: #adb5bd;
+        }
+        
+        .charts-section {
+            padding: 30px;
+        }
+        
+        .chart-container {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .chart-title {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            color: #343a40;
+            text-align: center;
+        }
+        
+        .chart-wrapper {
+            position: relative;
+            height: 400px;
+        }
+        
+        .info-section {
+            padding: 30px;
+            background: #f8f9fa;
+        }
+        
+        .info-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .info-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+        
+        .info-card p {
+            color: #6c757d;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+        }
+        
+        .warning-title {
+            color: #856404;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .warning-text {
+            color: #856404;
+            font-size: 0.9em;
+        }
+        
+        .timestamp {
+            text-align: center;
+            padding: 20px;
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎵 Audio Model Evaluation Dashboard</h1>
+            <p>CNN-LSTM Model for Depression Detection</p>
+        </div>
+        
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Overall Accuracy</div>
+                <div class="metric-value">60.28%</div>
+                <div class="metric-subtitle">4,313 / 7,157 correct predictions</div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Macro F1 Score</div>
+                <div class="metric-value">37.77%</div>
+                <div class="metric-subtitle">Average across classes</div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Total Samples</div>
+                <div class="metric-value">7,157</div>
+                <div class="metric-subtitle">Evaluation dataset</div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Processing Time</div>
+                <div class="metric-value">53:51</div>
+                <div class="metric-subtitle">Minutes (7.21s per batch)</div>
+            </div>
+        </div>
+        
+        <div class="charts-section">
+            <div class="chart-container">
+                <h3 class="chart-title">Per-Class Performance Metrics</h3>
+                <div class="chart-wrapper">
+                    <canvas id="classMetricsChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <h3 class="chart-title">Class-wise Metric Comparison</h3>
+                <div class="chart-wrapper">
+                    <canvas id="radarChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <h3 class="chart-title">Model Performance Overview</h3>
+                <div class="chart-wrapper">
+                    <canvas id="overallChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="info-section">
+            <div class="info-card">
+                <h3>📊 Key Findings</h3>
+                <p><strong>Non-Depressed Class:</strong> Excellent recall (99.86%) but moderate precision (60.30%), resulting in F1 of 75.19%</p>
+                <p><strong>Depressed Class:</strong> Very low recall (0.18%) despite moderate precision (45.45%), resulting in F1 of 0.35%</p>
+                
+                <div class="warning">
+                    <div class="warning-title">⚠️ Critical Issue Detected</div>
+                    <div class="warning-text">
+                        The model shows severe class imbalance issues. It's heavily biased toward predicting "non-depressed" 
+                        and fails to identify most "depressed" cases. This makes it unsuitable for clinical use without significant improvements.
+                    </div>
+                </div>
+            </div>
+            
+            <div class="info-card">
+                <h3>💡 Recommendations</h3>
+                <p>• <strong>Address Class Imbalance:</strong> Use oversampling (SMOTE), undersampling, or class weights</p>
+                <p>• <strong>Adjust Decision Threshold:</strong> Lower the classification threshold to improve recall for depressed class</p>
+                <p>• <strong>Feature Engineering:</strong> Extract more discriminative audio features (prosody, voice quality, speech patterns)</p>
+                <p>• <strong>Data Augmentation:</strong> Apply audio augmentation techniques to increase depressed class samples</p>
+                <p>• <strong>Focal Loss:</strong> Consider using focal loss to focus training on hard-to-classify examples</p>
+            </div>
+        </div>
+        
+        <div class="timestamp">
+            Evaluation completed: 2026-01-21 01:36:17 | Model: audio_cnn_lstm_best.pt
+        </div>
+    </div>
+    
+    <script>
+        // Per-Class Metrics Chart
+        const ctx1 = document.getElementById('classMetricsChart').getContext('2d');
+        new Chart(ctx1, {
+            type: 'bar',
+            data: {
+                labels: ['Non-Depressed', 'Depressed'],
+                datasets: [
+                    {
+                        label: 'Precision',
+                        data: [60.30, 45.45],
+                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                        borderColor: 'rgba(102, 126, 234, 1)',
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Recall',
+                        data: [99.86, 0.18],
+                        backgroundColor: 'rgba(118, 75, 162, 0.8)',
+                        borderColor: 'rgba(118, 75, 162, 1)',
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'F1 Score',
+                        data: [75.19, 0.35],
+                        backgroundColor: 'rgba(237, 100, 166, 0.8)',
+                        borderColor: 'rgba(237, 100, 166, 1)',
+                        borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Percentage (%)',
+                            font: { size: 14 }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: { font: { size: 12 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Radar Chart
+        const ctx2 = document.getElementById('radarChart').getContext('2d');
+        new Chart(ctx2, {
+            type: 'radar',
+            data: {
+                labels: ['Precision', 'Recall', 'F1 Score'],
+                datasets: [
+                    {
+                        label: 'Non-Depressed',
+                        data: [60.30, 99.86, 75.19],
+                        backgroundColor: 'rgba(102, 126, 234, 0.2)',
+                        borderColor: 'rgba(102, 126, 234, 1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: 'rgba(102, 126, 234, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(102, 126, 234, 1)'
+                    },
+                    {
+                        label: 'Depressed',
+                        data: [45.45, 0.18, 0.35],
+                        backgroundColor: 'rgba(118, 75, 162, 0.2)',
+                        borderColor: 'rgba(118, 75, 162, 1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: 'rgba(118, 75, 162, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(118, 75, 162, 1)'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: {
+                            stepSize: 20
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: { font: { size: 12 } }
+                    }
+                }
+            }
+        });
+        
+        // Overall Performance Chart
+        const ctx3 = document.getElementById('overallChart').getContext('2d');
+        new Chart(ctx3, {
+            type: 'doughnut',
+            data: {
+                labels: ['Overall Accuracy', 'Error Rate', 'Macro F1', 'Remaining'],
+                datasets: [{
+                    data: [60.28, 39.72, 37.77, 2.95],
+                    backgroundColor: [
+                        'rgba(102, 126, 234, 0.8)',
+                        'rgba(220, 53, 69, 0.8)',
+                        'rgba(118, 75, 162, 0.8)',
+                        'rgba(108, 117, 125, 0.3)'
+                    ],
+                    borderColor: [
+                        'rgba(102, 126, 234, 1)',
+                        'rgba(220, 53, 69, 1)',
+                        'rgba(118, 75, 162, 1)',
+                        'rgba(108, 117, 125, 1)'
+                    ],
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'right',
+                        labels: { font: { size: 12 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.label + ': ' + context.parsed.toFixed(2) + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

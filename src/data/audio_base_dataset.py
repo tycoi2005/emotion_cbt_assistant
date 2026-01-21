@@ -95,6 +95,7 @@ class BaseAudioDataset(Dataset):
         split_name: str = "train",
         subset_ratio: float = 0.8,
         feature_type: str = "mfcc", # "mfcc" or "raw"
+        augment: bool = False,
     ):
         """
         Initialize base audio dataset.
@@ -112,6 +113,7 @@ class BaseAudioDataset(Dataset):
             split_name: Dataset split name (train, dev, test)
             subset_ratio: Fraction of samples to use for training split (default: 0.8)
             feature_type: Type of features to return ("mfcc" or "raw")
+            augment: Whether to apply SpecAugment (only for training)
         """
         self.cfg = cfg
         self.samples = samples
@@ -121,6 +123,12 @@ class BaseAudioDataset(Dataset):
         self.max_duration = max_duration
         self.split_name = split_name
         self.feature_type = feature_type
+        self.augment = augment and split_name == "train"
+
+        # SpecAugment transforms
+        if self.augment:
+            self.time_mask = AT.TimeMasking(time_mask_param=30)
+            self.freq_mask = AT.FrequencyMasking(freq_mask_param=15)
 
         # Setup cache directory
         self.cache_dir = cfg.paths.processed_dir / "audio"
@@ -156,9 +164,14 @@ class BaseAudioDataset(Dataset):
         # Use filename stem as unique identifier
         filename_stem = audio_path.stem
 
+        # Add segment info to cache filename if present
+        segment_suffix = ""
+        if "start_sec" in sample and "duration_sec" in sample:
+            segment_suffix = f"_start{sample['start_sec']:.2f}_dur{sample['duration_sec']:.2f}"
+
         # Create cache filename
         cache_filename = (
-            f"{self.dataset_name}_{self.split_name}_{filename_stem}_"
+            f"{self.dataset_name}_{self.split_name}_{filename_stem}{segment_suffix}_"
             f"sr{self.sample_rate}_mfcc{self.n_mfcc}_max{self.max_duration:.1f}s.npy"
         )
 
@@ -190,6 +203,12 @@ class BaseAudioDataset(Dataset):
         try:
             # Load audio
             waveform = load_audio_mono(audio_path, self.sample_rate)
+
+            # Handle segment if specified
+            if "start_sec" in sample and "duration_sec" in sample:
+                start_sample = int(sample["start_sec"] * self.sample_rate)
+                dur_samples = int(sample["duration_sec"] * self.sample_rate)
+                waveform = waveform[start_sample : start_sample + dur_samples]
 
             # Crop or pad to max_duration
             max_samples = int(self.max_duration * self.sample_rate)
@@ -256,6 +275,14 @@ class BaseAudioDataset(Dataset):
             # mfcc from extract_mfcc is (time, n_mfcc)
             mfcc_tensor = torch.tensor(mfcc, dtype=torch.float32)
             features = mfcc_tensor.transpose(0, 1)  # (n_mfcc, time)
+
+            # Apply SpecAugment if requested
+            if self.augment:
+                # Add batch dim for transform: (1, n_mfcc, time)
+                features = features.unsqueeze(0)
+                features = self.time_mask(features)
+                features = self.freq_mask(features)
+                features = features.squeeze(0)
         else:
             # Load raw waveform
             sample = self.samples[idx]
@@ -263,6 +290,12 @@ class BaseAudioDataset(Dataset):
             label = int(sample["label"])
 
             waveform = load_audio_mono(audio_path, self.sample_rate)
+
+            # Handle segment if specified
+            if "start_sec" in sample and "duration_sec" in sample:
+                start_sample = int(sample["start_sec"] * self.sample_rate)
+                dur_samples = int(sample["duration_sec"] * self.sample_rate)
+                waveform = waveform[start_sample : start_sample + dur_samples]
 
             # Crop or pad to max_duration
             max_samples = int(self.max_duration * self.sample_rate)

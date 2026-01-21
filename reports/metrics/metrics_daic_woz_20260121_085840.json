@@ -1,0 +1,31 @@
+{
+  "daic_woz": {
+    "accuracy": 0.70875,
+    "macro_f1": 0.42296559772901055,
+    "weighted_f1": 0.5904768814757717,
+    "per_class": {
+      "non-depressed": {
+        "precision": 0.7080200501253133,
+        "recall": 1.0,
+        "f1": 0.8290535583272194,
+        "support": 565.0
+      },
+      "depressed": {
+        "precision": 1.0,
+        "recall": 0.00851063829787234,
+        "f1": 0.016877637130801686,
+        "support": 235.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        565,
+        0
+      ],
+      [
+        233,
+        2
+      ]
+    ]
+  }
+}
